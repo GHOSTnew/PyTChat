@@ -18,5 +18,6 @@ $ telnet 127.0.0.1 1337
 
 ## TO-DO
 
-- [ ] Meilleure gestion des déconnexions
-- [ ] Vos propositions :)
+- [X] Meilleure gestion des déconnexions
+- [ ] Vos propositions :wink:
+- [X] Nettoyage du code :scream:
