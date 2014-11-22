@@ -142,8 +142,9 @@ class ChatServer:
             + "/exit                 - Quit the room\r\n"
             + "/clear                - Clear the screen\r\n\r\n")
         self.clients.append(client)
-        client.send(self.__prepare_nick("SERVER") + ": Users = " + " ".join(str(c.get_nick()) for c in self.clients))
-        self.__broadcast(self.__prepare_nick("SERVER") + ": \033[32m" + client.get_nick() + " have joined the room\033[0m")
+        userList = " ".join(str(c.get_nick()) for c in self.clients)
+        self.__server_message("Users = " + userList, client)
+        self.__server_message("\033[32m" + client.get_nick() + " have joined the room\033[0m")
 
         while True:
             try:
@@ -161,7 +162,7 @@ class ChatServer:
                     break
                 elif command == "/who" or command == "/list":
                     userList = " ".join(str(c.get_nick()) for c in self.clients)
-                    client.send(self.__prepare_nick("SERVER") + ": Users = " + userList)
+                    self.__server_message("Users = " + userList, client)
                 elif command == "/private" or command == "/p":
                     if len(cmd) > 2:
                         for u in self.clients:
@@ -172,7 +173,7 @@ class ChatServer:
                 elif command == "/clear" or command == "/cls":
                     client.send("\033[2J")
                 else:
-                    client.send(self.__prepare_nick("SERVER") + ": \033[31mUnknow commands\033[0m")
+                    self.__server_message("\033[31mUnknow commands\033[0m", client)
             else:
                 if block != "":
                     self.__broadcast(self.__prepare_nick(client.get_nick()) + ": " + block)
@@ -183,6 +184,12 @@ class ChatServer:
                 return motd.read()
         except:
             return "\033[31mmotd file not found\033[0m"
+
+    def __server_message(self, msg, user=None):
+        if not user:
+            self.__broadcast(self.__prepare_nick("SERVER") + ": " + msg)
+        else:
+            user.send(self.__prepare_nick("SERVER") + ": " + msg)
 
     def __broadcast(self, msg):
         for client in self.clients:
@@ -196,7 +203,7 @@ class ChatServer:
         for c in self.clients:
             if c.get_nick().lower() == client.get_nick().lower():
                 self.clients.remove(c)
-        self.__broadcast(self.__prepare_nick("SERVER") + ": \033[33m" + client.get_nick() + " have left the room\033[0m")
+        self.__server_message("\033[33m" + client.get_nick() + " have left the room\033[0m")
 
     def __prepare_nick(self, nick):
         if len(nick) != 10:
