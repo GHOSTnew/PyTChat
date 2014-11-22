@@ -50,10 +50,9 @@ class User:
 
     def send(self, msg):
         if self.nick is not None:
-            self.send_raw("\r\n\033[1A\r")
-        self.connexion.send((str(msg) + "\r\n").encode('utf-8'))
-        if self.nick is not None:
-            self.send_raw("(you): ")
+            self.send_raw("\r\n\033[1A\r" + str(msg) + "\r\n" + "(you): ")
+        else:
+            self.send_raw(str(msg) + "\r\n")
 
     def send_raw(self, msg):
         self.connexion.send(str(msg).encode('utf-8'))
@@ -83,12 +82,15 @@ class ChatServer:
     def __linebyline(self, client):
         buff = ""
         while True:
-            data = client.get_session().recv(4096).decode(encoding='utf-8')
+            data = client.get_session().recv(4096)
+            try:
+                data = data.decode(encoding='utf-8')
+            except:
+                data = " "
+
             if not data:
-                if buff:
+                if not buff:
                     break
-                yield data
-                continue
             elif buff:
                 data = buff + data
                 buff = ""
@@ -110,6 +112,7 @@ class ChatServer:
             if possible_password != self.password:
                 client.send("\033[31mWrong password\033[0m\r\n")
                 client.get_session().close()
+                return None
 
         client.send(self.__get_motd())
 
@@ -125,11 +128,13 @@ class ChatServer:
                         allready_exist = True
                         client.send("\033[31mThis nick is allready used\033[0m")
                         break
+
             if not allready_exist:
                 if possible_nick.lower() != "server" and possible_nick != "":
                     client.set_nick(possible_nick)
                 else:
-                    client.send("This nick is reserved for server")
+                    client.send("\033[31mThis nick is reserved for server\033[0m")
+
         client.send_raw(
             "Commands available:\r\n"
             + "/who                  - List all users\r\n"
@@ -139,35 +144,32 @@ class ChatServer:
         self.clients.append(client)
         client.send(self.__prepare_nick("SERVER") + ": Users = " + " ".join(str(c.get_nick()) for c in self.clients))
         self.__broadcast(self.__prepare_nick("SERVER") + ": \033[32m" + client.get_nick() + " have joined the room\033[0m")
+
         while True:
-            #try:
-            block = next(generator)
-            #except :
-            #    client.get_session().close()
-            #    for c in self.clients:
-            #        if client.get_nick() == c.get_nick():
-            #            self.clients.remove(c)
-            #    self.__broadcast(self.__prepare_nick("SERVER") + ": \033[33m"  + client.get_nick() + " have left the room\033[0m")
-            #    break
+            try:
+                block = next(generator)
+            except:
+                self.__client_disconnect(client)
+                break
+
             client.send_raw("\r\033[1A\033[K\r")
             if block.startswith("/"):
                 cmd = block.split(" ")
-                if cmd[0].lower() == "/exit" or cmd[0].lower() == "/quit" or cmd[0].lower() == "/q":
-                    client.get_session().close()
-                    for c in self.clients:
-                        if client.get_nick() == c.get_nick():
-                            self.clients.remove(c)
-                    self.__broadcast(self.__prepare_nick("SERVER") + ": \033[33m" + client.get_nick() + " have left the room\033[0m")
+                command = cmd[0].lower()
+                if command == "/exit" or command == "/quit" or command == "/q":
+                    self.__client_disconnect(client)
                     break
-                elif cmd[0].lower() == "/who" or cmd[0].lower() == "/list":
-                    client.send(self.__prepare_nick("SERVER") + ": Users = " + " ".join(str(c.get_nick()) for c in self.clients))
-                elif cmd[0].lower() == "/private" or cmd[0].lower() == "/p":
+                elif command == "/who" or command == "/list":
+                    userList = " ".join(str(c.get_nick()) for c in self.clients)
+                    client.send(self.__prepare_nick("SERVER") + ": Users = " + userList)
+                elif command == "/private" or command == "/p":
                     if len(cmd) > 2:
                         for u in self.clients:
                             if u.get_nick().lower() == cmd[1].lower():
                                 u.send("(**" + client.get_nick() + "->" + u.get_nick() + "): " + block[block.index(cmd[1]):])
                                 client.send("(**" + client.get_nick() + "->" + u.get_nick() + "): " + block[block.index(cmd[1]):])
-                elif cmd[0].lower() == "/clear" or cmd[0].lower() == "/cls":
+                                break
+                elif command == "/clear" or command == "/cls":
                     client.send("\033[2J")
                 else:
                     client.send(self.__prepare_nick("SERVER") + ": \033[31mUnknow commands\033[0m")
@@ -180,26 +182,27 @@ class ChatServer:
             with open("motd.txt", "r") as motd:
                 return motd.read()
         except:
-            return "Bienvenue dans la matrice"
+            return "\033[31mmotd file not found\033[0m"
 
     def __broadcast(self, msg):
         for client in self.clients:
-            if client.get_nick() is not None:
-                try:
-                    client.send(msg)
-                except:
-                    client.get_session().close()
-                    self.clients.remove(client)
-                    self.__broadcast(self.__prepare_nick("SERVER") + ": \033[33m" + client.get_nick() + " have left the room\033[0m")
+            try:
+                client.send(msg)
+            except:
+                self.__client_disconnect(client)
+
+    def __client_disconnect(self, client):
+        client.get_session().close()
+        for c in self.clients:
+            if c.get_nick().lower() == client.get_nick().lower():
+                self.clients.remove(c)
+        self.__broadcast(self.__prepare_nick("SERVER") + ": \033[33m" + client.get_nick() + " have left the room\033[0m")
 
     def __prepare_nick(self, nick):
         if len(nick) != 10:
-            nick_new = "\033[35m"
-            nick_new += "".join(" " for i in range(0, 10-len(nick)))
-            nick_new += nick + "\033[0m"
-            return "\033[35m" + nick_new + "\033[0m"
+            return "\033[35m" + "".join(" " for i in range(0, 10-len(nick))) + nick + "\033[0m"
         else:
-            return nick
+            return "\033[35m" +  nick + "\033[0m"
 
 if __name__ == '__main__':
     config = ConfigParser.ConfigParser()
